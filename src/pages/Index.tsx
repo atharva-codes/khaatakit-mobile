@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { 
   Home, Upload, AlertCircle, TrendingUp, TrendingDown, DollarSign, 
-  Camera, FileText, Upload as UploadIcon, Lightbulb, CheckCircle 
+  Camera, FileText, Upload as UploadIcon, Lightbulb, CheckCircle, Sparkles, Brain 
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -263,25 +263,42 @@ const KhaataKitab = () => {
         />
       </div>
 
-      {/* ML Predictions */}
+      {/* ML Predictions - Prominent Section */}
       <div className="p-4">
-        <Card className="p-4 bg-primary/5 border-primary/20">
-          <div className="flex items-center gap-2 mb-3">
-            <Lightbulb className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold text-foreground">AI Predictions (July)</h2>
+        <Card className="p-5 bg-gradient-to-br from-purple-500/10 via-primary/10 to-blue-500/10 border-2 border-primary/30 shadow-lg animate-pulse-slow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-primary rounded-lg animate-pulse">
+                <Brain className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <div>
+                <h2 className="font-bold text-foreground flex items-center gap-2">
+                  ML Predictions - Next Month
+                  <Sparkles className="h-4 w-4 text-primary animate-bounce" />
+                </h2>
+                <p className="text-xs text-muted-foreground">AI-powered forecast using linear regression</p>
+              </div>
+            </div>
+            <Badge className="bg-primary/20 text-primary border-primary/50 font-bold">
+              <Sparkles className="h-3 w-3 mr-1" />
+              ML
+            </Badge>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="text-center">
+            <div className="text-center bg-background/60 rounded-lg p-3">
               <p className="text-xs text-muted-foreground mb-1">Income</p>
-              <p className="text-lg font-bold text-success">₹{prediction.income.toLocaleString()}</p>
+              <p className="text-xl font-bold text-success">₹{prediction.income.toLocaleString()}</p>
+              <p className="text-xs text-success/70 mt-1">Predicted ↑</p>
             </div>
-            <div className="text-center">
+            <div className="text-center bg-background/60 rounded-lg p-3">
               <p className="text-xs text-muted-foreground mb-1">Expenses</p>
-              <p className="text-lg font-bold text-destructive">₹{prediction.expenses.toLocaleString()}</p>
+              <p className="text-xl font-bold text-destructive">₹{prediction.expenses.toLocaleString()}</p>
+              <p className="text-xs text-destructive/70 mt-1">Predicted ↑</p>
             </div>
-            <div className="text-center">
+            <div className="text-center bg-background/60 rounded-lg p-3">
               <p className="text-xs text-muted-foreground mb-1">Profit</p>
-              <p className="text-lg font-bold text-primary">₹{prediction.profit.toLocaleString()}</p>
+              <p className="text-xl font-bold text-primary">₹{prediction.profit.toLocaleString()}</p>
+              <p className="text-xs text-primary/70 mt-1">Estimated</p>
             </div>
           </div>
         </Card>
@@ -403,8 +420,19 @@ const KhaataKitab = () => {
     <div className="animate-fade-in">
       {/* Header */}
       <div className="bg-primary text-primary-foreground p-6 rounded-b-3xl shadow-lg">
-        <h1 className="text-2xl font-bold mb-1">Alerts & Tips</h1>
-        <p className="text-sm opacity-90">AI-powered insights for your business</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
+              Alerts & Tips
+              <Sparkles className="h-5 w-5 animate-pulse" />
+            </h1>
+            <p className="text-sm opacity-90">AI-powered insights for your business</p>
+          </div>
+          <Badge className="bg-primary-foreground/20 text-primary-foreground border-primary-foreground/30">
+            <Brain className="h-3 w-3 mr-1" />
+            ML
+          </Badge>
+        </div>
       </div>
 
       <div className="p-4 space-y-3">
@@ -414,7 +442,15 @@ const KhaataKitab = () => {
               <div className="pt-1">{getAlertIcon(alert.type)}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2 mb-1">
-                  <h3 className="font-semibold text-foreground">{alert.title}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground">{alert.title}</h3>
+                    {alert.type === "info" && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                        ML
+                      </Badge>
+                    )}
+                  </div>
                   <Badge variant={getPriorityVariant(alert.priority)} className="shrink-0">
                     {alert.priority}
                   </Badge>
