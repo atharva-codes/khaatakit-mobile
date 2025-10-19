@@ -30,6 +30,39 @@ const KhaataKitab = () => {
   const totalIncome = 328000;
   const totalExpenses = 231000;
   const netProfit = totalIncome - totalExpenses;
+  
+  // Current Balance Calculation
+  const openingBalance = 150000;
+  const currentBalance = openingBalance + totalIncome - totalExpenses;
+
+  // ML Predictions - Simple Linear Regression
+  const predictNextMonth = () => {
+    const n = cashflowData.length;
+    
+    // Calculate trend for income
+    const incomeSlope = cashflowData.reduce((sum, item, idx) => {
+      return sum + (idx + 1) * item.income;
+    }, 0) / n - (((n + 1) / 2) * cashflowData.reduce((sum, item) => sum + item.income, 0) / n);
+    
+    const avgIncome = cashflowData.reduce((sum, item) => sum + item.income, 0) / n;
+    const predictedIncome = Math.round(avgIncome + incomeSlope * 1.5);
+    
+    // Calculate trend for expenses
+    const expenseSlope = cashflowData.reduce((sum, item, idx) => {
+      return sum + (idx + 1) * item.expenses;
+    }, 0) / n - (((n + 1) / 2) * cashflowData.reduce((sum, item) => sum + item.expenses, 0) / n);
+    
+    const avgExpenses = cashflowData.reduce((sum, item) => sum + item.expenses, 0) / n;
+    const predictedExpenses = Math.round(avgExpenses + expenseSlope * 1.5);
+    
+    return {
+      income: predictedIncome,
+      expenses: predictedExpenses,
+      profit: predictedIncome - predictedExpenses
+    };
+  };
+
+  const prediction = predictNextMonth();
 
   // ===== UPLOAD DATA =====
   const [smsText, setSmsText] = useState("");
@@ -196,8 +229,20 @@ const KhaataKitab = () => {
         <p className="text-sm opacity-90">Your Business Dashboard</p>
       </div>
 
+      {/* Current Balance */}
+      <div className="p-4">
+        <Card className="p-6 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm opacity-90">Current Balance</p>
+            <DollarSign className="h-6 w-6 opacity-90" />
+          </div>
+          <p className="text-4xl font-bold mb-1">₹{currentBalance.toLocaleString()}</p>
+          <p className="text-xs opacity-75">Opening: ₹{openingBalance.toLocaleString()}</p>
+        </Card>
+      </div>
+
       {/* Metrics */}
-      <div className="p-4 space-y-3">
+      <div className="px-4 space-y-3">
         <MetricCard
           title="Total Income"
           value={`₹${totalIncome.toLocaleString()}`}
@@ -216,6 +261,30 @@ const KhaataKitab = () => {
           icon={DollarSign}
           trend="positive"
         />
+      </div>
+
+      {/* ML Predictions */}
+      <div className="p-4">
+        <Card className="p-4 bg-primary/5 border-primary/20">
+          <div className="flex items-center gap-2 mb-3">
+            <Lightbulb className="h-5 w-5 text-primary" />
+            <h2 className="font-semibold text-foreground">AI Predictions (July)</h2>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-1">Income</p>
+              <p className="text-lg font-bold text-success">₹{prediction.income.toLocaleString()}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-1">Expenses</p>
+              <p className="text-lg font-bold text-destructive">₹{prediction.expenses.toLocaleString()}</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground mb-1">Profit</p>
+              <p className="text-lg font-bold text-primary">₹{prediction.profit.toLocaleString()}</p>
+            </div>
+          </div>
+        </Card>
       </div>
 
       {/* Cashflow Chart */}
