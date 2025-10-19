@@ -9,22 +9,24 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export type InventoryItem = {
-  id: string;
-  name: string;
-  quantity: number;
-  price: number;
-  created_at: string;
-  updated_at: string;
-};
+export type NotificationType = 'income' | 'expense' | 'insight' | 'reminder';
 
-export type Transaction = {
+export interface Notification {
   id: string;
-  amount: number;
-  type: 'income' | 'expense';
-  category: string;
-  date: string;
-  inventory_item_id?: string | null;
-  quantity_changed?: number;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  is_read: boolean;
   created_at: string;
-};
+  metadata?: Record<string, any>;
+}
+
+export interface UserPreferences {
+  id: string;
+  user_id: string;
+  app_notifications_enabled: boolean;
+  sms_alerts_enabled: boolean;
+  phone_number?: string;
+  updated_at: string;
+}

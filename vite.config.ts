@@ -1,8 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-// ⚠️ Temporarily disable lovable-tagger to fix ESM issue
-// import { componentTagger } from "lovable-tagger";
+import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
@@ -13,7 +12,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    // mode === "development" && componentTagger(), // ❌ Disabled for now
+    mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico"],
@@ -55,9 +54,5 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-  },
-  // ✅ Ignore lovable-tagger in dependency optimization
-  optimizeDeps: {
-    exclude: ["lovable-tagger"],
   },
 }));
