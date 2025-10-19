@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import {
-  Home, Plus, AlertCircle, TrendingUp, TrendingDown, DollarSign,
-  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw, Bell
+import { 
+  Home, Plus, AlertCircle, TrendingUp, TrendingDown, DollarSign, 
+  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw 
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { NotificationsScreen } from "@/components/NotificationsScreen";
-import { SettingsScreen } from "@/components/SettingsScreen";
-import { sendNotification, getUnreadCount } from "@/services/notificationService";
 
 // ===== TYPES =====
-type Screen = "dashboard" | "add" | "alerts" | "credit" | "notifications" | "settings";
+type Screen = "dashboard" | "add" | "alerts" | "credit";
 
 type TransactionType = "income" | "expense";
 
@@ -33,7 +30,6 @@ type Transaction = {
 const KhaataKitab = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>("dashboard");
   const { toast } = useToast();
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   // ===== TRANSACTION STATE WITH LOCALSTORAGE =====
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
@@ -45,17 +41,6 @@ const KhaataKitab = () => {
   useEffect(() => {
     localStorage.setItem("khaataKitab_transactions", JSON.stringify(transactions));
   }, [transactions]);
-
-  // Load unread notification count
-  useEffect(() => {
-    const loadUnreadCount = async () => {
-      const count = await getUnreadCount();
-      setUnreadNotifications(count);
-    };
-    loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 5000);
-    return () => clearInterval(interval);
-  }, []);
 
   // ===== FORM STATE FOR ADD TRANSACTION =====
   const [amount, setAmount] = useState("");
@@ -228,26 +213,10 @@ const KhaataKitab = () => {
     };
 
     setTransactions([newTransaction, ...transactions]);
-
+    
     toast({
       title: "Transaction added",
       description: `₹${amount} ${type} recorded successfully`,
-    });
-
-    // Send notification
-    const notificationMessage = type === "income"
-      ? `New transaction added: ₹${parseFloat(amount).toLocaleString()} credited to your ${category || 'account'}.`
-      : `Expense Alert: You spent ₹${parseFloat(amount).toLocaleString()} on ${category || 'expenses'}.`;
-
-    sendNotification({
-      type: type === "income" ? "income" : "expense",
-      title: type === "income" ? "Income Received" : "Expense Recorded",
-      message: notificationMessage,
-      category: category || (type === "income" ? "Other Income" : "Other Expense"),
-      amount: parseFloat(amount),
-      priority: parseFloat(amount) > 1000 ? "high" : "medium",
-    }).then(() => {
-      getUnreadCount().then(setUnreadNotifications);
     });
 
     // Reset form
@@ -740,7 +709,6 @@ const KhaataKitab = () => {
   const navItems = [
     { id: "dashboard" as Screen, icon: Home, label: "Dashboard" },
     { id: "add" as Screen, icon: Plus, label: "Add" },
-    { id: "notifications" as Screen, icon: Bell, label: "Notifications", badge: unreadNotifications },
     { id: "alerts" as Screen, icon: AlertCircle, label: "Alerts" },
     { id: "credit" as Screen, icon: TrendingUp, label: "Credit" },
   ];
@@ -750,14 +718,6 @@ const KhaataKitab = () => {
       {/* Screen Content */}
       {activeScreen === "dashboard" && renderDashboard()}
       {activeScreen === "add" && renderAddTransaction()}
-      {activeScreen === "notifications" && (
-        <NotificationsScreen
-          onNavigateToSettings={() => setActiveScreen("settings")}
-        />
-      )}
-      {activeScreen === "settings" && (
-        <SettingsScreen onBack={() => setActiveScreen("notifications")} />
-      )}
       {activeScreen === "alerts" && renderAlerts()}
       {activeScreen === "credit" && renderCredit()}
 
@@ -771,28 +731,14 @@ const KhaataKitab = () => {
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  setActiveScreen(item.id);
-                  if (item.id === "notifications") {
-                    setTimeout(() => {
-                      getUnreadCount().then(setUnreadNotifications);
-                    }, 500);
-                  }
-                }}
-                className={`flex flex-col items-center justify-center flex-1 h-full transition-colors relative ${
+                onClick={() => setActiveScreen(item.id)}
+                className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <div className="relative">
-                  <Icon className="h-5 w-5 mb-1" />
-                  {'badge' in item && item.badge && item.badge > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
-                      {item.badge > 9 ? '9+' : item.badge}
-                    </span>
-                  )}
-                </div>
+                <Icon className="h-5 w-5 mb-1" />
                 <span className="text-xs font-medium">{item.label}</span>
               </button>
             );
