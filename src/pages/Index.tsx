@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
-import { 
-  Home, Plus, AlertCircle, TrendingUp, TrendingDown, DollarSign, 
-  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw 
+import { useNavigate } from "react-router-dom";
+import {
+  Home, Plus, AlertCircle, TrendingUp, TrendingDown, DollarSign,
+  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw, Bell, Settings as SettingsIcon
 } from "lucide-react";
+import { sendNotification } from "@/services/notificationService";
+import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +33,8 @@ type Transaction = {
 const KhaataKitab = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>("dashboard");
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { unreadCount } = useNotifications();
 
   // ===== TRANSACTION STATE WITH LOCALSTORAGE =====
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
@@ -213,10 +218,21 @@ const KhaataKitab = () => {
     };
 
     setTransactions([newTransaction, ...transactions]);
-    
+
     toast({
       title: "Transaction added",
       description: `₹${amount} ${type} recorded successfully`,
+    });
+
+    sendNotification({
+      type: type === "income" ? "income" : "expense",
+      title: `${type === "income" ? "💰" : "⚠️"} New ${type} recorded`,
+      message: `${type === "income" ? "Credited" : "Debited"} ₹${parseFloat(amount).toLocaleString()} ${category ? `to ${category}` : ""}`,
+      metadata: {
+        transaction_id: newTransaction.id,
+        amount: parseFloat(amount),
+        category: category || (type === "income" ? "Other Income" : "Other Expense"),
+      },
     });
 
     // Reset form
@@ -711,6 +727,8 @@ const KhaataKitab = () => {
     { id: "add" as Screen, icon: Plus, label: "Add" },
     { id: "alerts" as Screen, icon: AlertCircle, label: "Alerts" },
     { id: "credit" as Screen, icon: TrendingUp, label: "Credit" },
+    { id: "notifications" as Screen, icon: Bell, label: "Inbox", badge: unreadCount > 0 ? unreadCount : undefined, onClick: () => navigate("/notifications") },
+    { id: "settings" as Screen, icon: SettingsIcon, label: "Settings", onClick: () => navigate("/settings") },
   ];
 
   return (
@@ -727,12 +745,12 @@ const KhaataKitab = () => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeScreen === item.id;
-            
+
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveScreen(item.id)}
-                className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
+                onClick={() => item.onClick ? item.onClick() : setActiveScreen(item.id)}
+                className={`flex flex-col items-center justify-center flex-1 h-full transition-colors relative ${
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -740,6 +758,11 @@ const KhaataKitab = () => {
               >
                 <Icon className="h-5 w-5 mb-1" />
                 <span className="text-xs font-medium">{item.label}</span>
+                {item.badge && (
+                  <span className="absolute top-1.5 right-1/4 bg-destructive text-destructive-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                    {item.badge > 9 ? "9+" : item.badge}
+                  </span>
+                )}
               </button>
             );
           })}
