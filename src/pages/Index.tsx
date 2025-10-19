@@ -1,42 +1,99 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
-  Home, Upload, AlertCircle, TrendingUp, TrendingDown, DollarSign, 
-  Camera, FileText, Upload as UploadIcon, Lightbulb, CheckCircle, Sparkles, Brain 
+  Home, Plus, AlertCircle, TrendingUp, TrendingDown, DollarSign, 
+  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw 
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
-type Screen = "dashboard" | "upload" | "alerts" | "credit";
+// ===== TYPES =====
+type Screen = "dashboard" | "add" | "alerts" | "credit";
+
+type TransactionType = "income" | "expense";
+
+type Transaction = {
+  id: string;
+  amount: number;
+  type: TransactionType;
+  category: string;
+  date: string;
+  timestamp: number;
+};
 
 const KhaataKitab = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>("dashboard");
   const { toast } = useToast();
 
-  // ===== DASHBOARD DATA =====
-  const cashflowData = [
-    { month: "Jan", income: 45000, expenses: 32000 },
-    { month: "Feb", income: 52000, expenses: 38000 },
-    { month: "Mar", income: 48000, expenses: 35000 },
-    { month: "Apr", income: 61000, expenses: 42000 },
-    { month: "May", income: 55000, expenses: 39000 },
-    { month: "Jun", income: 67000, expenses: 45000 },
-  ];
+  // ===== TRANSACTION STATE WITH LOCALSTORAGE =====
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem("khaataKitab_transactions");
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  const totalIncome = 328000;
-  const totalExpenses = 231000;
-  const netProfit = totalIncome - totalExpenses;
-  
-  // Current Balance Calculation
-  const openingBalance = 150000;
-  const currentBalance = openingBalance + totalIncome - totalExpenses;
+  // Save to localStorage whenever transactions change
+  useEffect(() => {
+    localStorage.setItem("khaataKitab_transactions", JSON.stringify(transactions));
+  }, [transactions]);
 
-  // ML Predictions - Simple Linear Regression
+  // ===== FORM STATE FOR ADD TRANSACTION =====
+  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<TransactionType>("income");
+  const [category, setCategory] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+
+  // ===== CALCULATE METRICS FROM TRANSACTIONS =====
+  const totalIncome = transactions
+    .filter((t) => t.type === "income")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalExpenses = transactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const currentBalance = totalIncome - totalExpenses;
+
+  // ===== GENERATE CASHFLOW DATA FROM TRANSACTIONS =====
+  const getCashflowData = () => {
+    if (transactions.length === 0) {
+      return [{ month: "No data", income: 0, expenses: 0 }];
+    }
+
+    // Group transactions by month
+    const monthlyData: { [key: string]: { income: number; expenses: number } } = {};
+    
+    transactions.forEach((t) => {
+      const monthKey = new Date(t.date).toLocaleDateString("en-US", { month: "short" });
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { income: 0, expenses: 0 };
+      }
+      if (t.type === "income") {
+        monthlyData[monthKey].income += t.amount;
+      } else {
+        monthlyData[monthKey].expenses += t.amount;
+      }
+    });
+
+    return Object.entries(monthlyData).map(([month, data]) => ({
+      month,
+      ...data,
+    }));
+  };
+
+  const cashflowData = getCashflowData();
+
+  // ===== ML PREDICTIONS =====
   const predictNextMonth = () => {
+    if (transactions.length < 2) {
+      return { income: 0, expenses: 0, profit: 0 };
+    }
+
     const n = cashflowData.length;
     
     // Calculate trend for income
@@ -64,79 +121,120 @@ const KhaataKitab = () => {
 
   const prediction = predictNextMonth();
 
-  // ===== UPLOAD DATA =====
-  const [smsText, setSmsText] = useState("");
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // ===== DYNAMIC ALERTS GENERATION =====
+  const generateAlerts = () => {
+    const alerts: any[] = [];
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-      toast({
-        title: "Receipt uploaded",
-        description: "Image uploaded successfully",
+    // Alert if expenses > 80% of income
+    if (totalIncome > 0 && (totalExpenses / totalIncome) > 0.8) {
+      alerts.push({
+        id: 1,
+        type: "warning",
+        title: "High Expense Ratio",
+        message: `Your expenses are ${Math.round((totalExpenses / totalIncome) * 100)}% of your income. Consider reducing spending.`,
+        date: "Today",
+        priority: "high",
       });
     }
+
+    // Alert if approaching negative balance
+    if (currentBalance < 10000 && currentBalance > 0) {
+      alerts.push({
+        id: 2,
+        type: "danger",
+        title: "Low Balance Warning",
+        message: `Your balance is running low at ₹${currentBalance.toLocaleString()}. Monitor your spending closely.`,
+        date: "Today",
+        priority: "high",
+      });
+    }
+
+    // Daily spending spike detection
+    const last7Days = transactions
+      .filter((t) => {
+        const daysDiff = (Date.now() - new Date(t.date).getTime()) / (1000 * 60 * 60 * 24);
+        return daysDiff <= 7 && t.type === "expense";
+      });
+
+    if (last7Days.length >= 3) {
+      const dailyExpenses = last7Days.map((t) => t.amount);
+      const avgDaily = dailyExpenses.reduce((a, b) => a + b, 0) / dailyExpenses.length;
+      const todayExpenses = transactions
+        .filter((t) => t.date === new Date().toISOString().split("T")[0] && t.type === "expense")
+        .reduce((sum, t) => sum + t.amount, 0);
+
+      if (todayExpenses > avgDaily * 1.2) {
+        alerts.push({
+          id: 3,
+          type: "info",
+          title: "Spending Spike Detected",
+          message: `Today's spending (₹${todayExpenses}) is 20% higher than your daily average of ₹${Math.round(avgDaily)}.`,
+          date: "Today",
+          priority: "medium",
+        });
+      }
+    }
+
+    // Positive feedback
+    if (currentBalance > 0 && totalExpenses < totalIncome * 0.7) {
+      alerts.push({
+        id: 4,
+        type: "success",
+        title: "Great Financial Health!",
+        message: "You're maintaining healthy spending habits. Keep up the good work!",
+        date: "Today",
+        priority: "low",
+      });
+    }
+
+    return alerts;
   };
 
-  const handleSubmit = () => {
-    if (!smsText && !selectedImage) {
+  const alerts = generateAlerts();
+
+  // ===== TRANSACTION HANDLERS =====
+  const handleAddTransaction = () => {
+    if (!amount || parseFloat(amount) <= 0) {
       toast({
-        title: "No data",
-        description: "Please add SMS text or upload a receipt",
+        title: "Invalid amount",
+        description: "Please enter a valid amount",
         variant: "destructive",
       });
       return;
     }
 
+    const newTransaction: Transaction = {
+      id: Date.now().toString(),
+      amount: parseFloat(amount),
+      type,
+      category: category || (type === "income" ? "Other Income" : "Other Expense"),
+      date,
+      timestamp: new Date(date).getTime(),
+    };
+
+    setTransactions([newTransaction, ...transactions]);
+    
     toast({
       title: "Transaction added",
-      description: "Your transaction has been recorded successfully",
+      description: `₹${amount} ${type} recorded successfully`,
     });
-    
-    setSmsText("");
-    setSelectedImage(null);
+
+    // Reset form
+    setAmount("");
+    setCategory("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setActiveScreen("dashboard");
   };
 
-  // ===== ALERTS DATA =====
-  const alerts = [
-    {
-      id: 1,
-      type: "warning",
-      title: "Low Cashflow Alert",
-      message: "Your expenses are 85% of your income this month. Consider reducing non-essential spending.",
-      date: "Today",
-      priority: "high",
-    },
-    {
-      id: 2,
-      type: "danger",
-      title: "Approaching Credit Limit",
-      message: "You've used 75% of your available credit. Try to pay down balances to improve your credit score.",
-      date: "Today",
-      priority: "high",
-    },
-    {
-      id: 3,
-      type: "info",
-      title: "Save on Inventory",
-      message: "Based on your purchase patterns, buying in bulk could save you ₹3,500/month.",
-      date: "Yesterday",
-      priority: "medium",
-    },
-    {
-      id: 4,
-      type: "success",
-      title: "Good Payment Record",
-      message: "You've maintained on-time payments for 3 months. This helps build your credit score!",
-      date: "2 days ago",
-      priority: "low",
-    },
-  ];
+  const handleClearData = () => {
+    if (confirm("Are you sure you want to clear all data? This cannot be undone.")) {
+      setTransactions([]);
+      toast({
+        title: "Data cleared",
+        description: "All transactions have been removed",
+      });
+    }
+  };
 
   // ===== CREDIT DATA =====
   const creditScore = 720;
@@ -222,11 +320,24 @@ const KhaataKitab = () => {
 
   // ===== SCREEN RENDERERS =====
   const renderDashboard = () => (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in pb-4">
       {/* Header */}
       <div className="bg-primary text-primary-foreground p-6 rounded-b-3xl shadow-lg">
-        <h1 className="text-2xl font-bold mb-1">KhaataKitab</h1>
-        <p className="text-sm opacity-90">Your Business Dashboard</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold mb-1">KhaataKitab</h1>
+            <p className="text-sm opacity-90">AI-Powered Bookkeeping</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearData}
+            className="bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20"
+          >
+            <RotateCcw className="h-4 w-4 mr-1" />
+            Reset
+          </Button>
+        </div>
       </div>
 
       {/* Current Balance */}
@@ -237,7 +348,9 @@ const KhaataKitab = () => {
             <DollarSign className="h-6 w-6 opacity-90" />
           </div>
           <p className="text-4xl font-bold mb-1">₹{currentBalance.toLocaleString()}</p>
-          <p className="text-xs opacity-75">Opening: ₹{openingBalance.toLocaleString()}</p>
+          <p className="text-xs opacity-75">
+            {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}
+          </p>
         </Card>
       </div>
 
@@ -255,163 +368,224 @@ const KhaataKitab = () => {
           icon={TrendingDown}
           trend="negative"
         />
-        <MetricCard
-          title="Net Profit"
-          value={`₹${netProfit.toLocaleString()}`}
-          icon={DollarSign}
-          trend="positive"
-        />
       </div>
 
-      {/* ML Predictions - Prominent Section */}
-      <div className="p-4">
-        <Card className="p-5 bg-gradient-to-br from-purple-500/10 via-primary/10 to-blue-500/10 border-2 border-primary/30 shadow-lg animate-pulse-slow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-primary rounded-lg animate-pulse">
-                <Brain className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h2 className="font-bold text-foreground flex items-center gap-2">
-                  ML Predictions - Next Month
-                  <Sparkles className="h-4 w-4 text-primary animate-bounce" />
-                </h2>
-                <p className="text-xs text-muted-foreground">AI-powered forecast using linear regression</p>
-              </div>
+      {/* Recent Transactions */}
+      <div className="px-4 mt-4">
+        <Card className="p-4">
+          <h2 className="text-lg font-semibold mb-3 text-foreground">Recent Transactions</h2>
+          {transactions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <DollarSign className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No transactions yet</p>
+              <p className="text-xs mt-1">Add your first transaction to get started</p>
             </div>
-            <Badge className="bg-primary/20 text-primary border-primary/50 font-bold">
-              <Sparkles className="h-3 w-3 mr-1" />
-              ML
-            </Badge>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="text-center bg-background/60 rounded-lg p-3">
-              <p className="text-xs text-muted-foreground mb-1">Income</p>
-              <p className="text-xl font-bold text-success">₹{prediction.income.toLocaleString()}</p>
-              <p className="text-xs text-success/70 mt-1">Predicted ↑</p>
+          ) : (
+            <div className="space-y-2">
+              {transactions.slice(0, 5).map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between p-3 bg-muted/50 rounded-lg"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`p-2 rounded-full ${
+                        transaction.type === "income"
+                          ? "bg-success/10"
+                          : "bg-destructive/10"
+                      }`}
+                    >
+                      {transaction.type === "income" ? (
+                        <TrendingUp className="h-4 w-4 text-success" />
+                      ) : (
+                        <TrendingDown className="h-4 w-4 text-destructive" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">{transaction.category}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(transaction.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <p
+                    className={`font-bold ${
+                      transaction.type === "income" ? "text-success" : "text-destructive"
+                    }`}
+                  >
+                    {transaction.type === "income" ? "+" : "-"}₹{transaction.amount.toLocaleString()}
+                  </p>
+                </div>
+              ))}
             </div>
-            <div className="text-center bg-background/60 rounded-lg p-3">
-              <p className="text-xs text-muted-foreground mb-1">Expenses</p>
-              <p className="text-xl font-bold text-destructive">₹{prediction.expenses.toLocaleString()}</p>
-              <p className="text-xs text-destructive/70 mt-1">Predicted ↑</p>
-            </div>
-            <div className="text-center bg-background/60 rounded-lg p-3">
-              <p className="text-xs text-muted-foreground mb-1">Profit</p>
-              <p className="text-xl font-bold text-primary">₹{prediction.profit.toLocaleString()}</p>
-              <p className="text-xs text-primary/70 mt-1">Estimated</p>
-            </div>
-          </div>
+          )}
         </Card>
       </div>
+
+      {/* ML Predictions */}
+      {transactions.length >= 2 && (
+        <div className="p-4">
+          <Card className="p-5 bg-gradient-to-br from-purple-500/10 via-primary/10 to-blue-500/10 border-2 border-primary/30 shadow-lg animate-pulse-slow">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-primary rounded-lg animate-pulse">
+                  <Brain className="h-5 w-5 text-primary-foreground" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-foreground flex items-center gap-2">
+                    ML Predictions - Next Month
+                    <Sparkles className="h-4 w-4 text-primary animate-bounce" />
+                  </h2>
+                  <p className="text-xs text-muted-foreground">AI-powered forecast</p>
+                </div>
+              </div>
+              <Badge className="bg-primary/20 text-primary border-primary/50 font-bold">
+                <Sparkles className="h-3 w-3 mr-1" />
+                ML
+              </Badge>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center bg-background/60 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Income</p>
+                <p className="text-xl font-bold text-success">₹{prediction.income.toLocaleString()}</p>
+              </div>
+              <div className="text-center bg-background/60 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Expenses</p>
+                <p className="text-xl font-bold text-destructive">₹{prediction.expenses.toLocaleString()}</p>
+              </div>
+              <div className="text-center bg-background/60 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Profit</p>
+                <p className="text-xl font-bold text-primary">₹{prediction.profit.toLocaleString()}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Cashflow Chart */}
-      <div className="p-4">
-        <Card className="p-4">
-          <h2 className="text-lg font-semibold mb-4 text-foreground">Cashflow Trend</h2>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={cashflowData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: "hsl(var(--card))", 
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "8px"
-                }} 
-              />
-              <Bar dataKey="income" fill="hsl(var(--success))" radius={[8, 8, 0, 0]} />
-              <Bar dataKey="expenses" fill="hsl(var(--destructive))" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-      </div>
+      {transactions.length > 0 && (
+        <div className="p-4">
+          <Card className="p-4">
+            <h2 className="text-lg font-semibold mb-4 text-foreground">Cashflow Trend</h2>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={cashflowData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: "hsl(var(--card))", 
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px"
+                  }} 
+                />
+                <Bar dataKey="income" fill="hsl(var(--success))" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="expenses" fill="hsl(var(--destructive))" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+      )}
     </div>
   );
 
-  const renderUpload = () => (
+  const renderAddTransaction = () => (
     <div className="animate-fade-in">
       {/* Header */}
       <div className="bg-primary text-primary-foreground p-6 rounded-b-3xl shadow-lg">
-        <h1 className="text-2xl font-bold mb-1">Upload Transactions</h1>
-        <p className="text-sm opacity-90">Add SMS or receipt images</p>
+        <h1 className="text-2xl font-bold mb-1">Add Transaction</h1>
+        <p className="text-sm opacity-90">Record income or expense</p>
       </div>
 
       <div className="p-4 space-y-4">
-        {/* SMS Upload Section */}
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <FileText className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold text-foreground">Paste SMS Transaction</h2>
-          </div>
-          <Textarea
-            placeholder="Paste your bank SMS here... (e.g., 'Debited Rs 500 from A/C XX1234 on 01-Jan-2025')"
-            value={smsText}
-            onChange={(e) => setSmsText(e.target.value)}
-            className="min-h-32"
-          />
-        </Card>
-
-        {/* Receipt Upload Section */}
-        <Card className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Camera className="h-5 w-5 text-primary" />
-            <h2 className="font-semibold text-foreground">Upload Receipt Image</h2>
-          </div>
-          
-          <div className="space-y-3">
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleImageUpload}
-              className="hidden"
-              id="camera-input"
-            />
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-              id="gallery-input"
-            />
-            
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => document.getElementById("camera-input")?.click()}
-              >
-                <Camera className="h-4 w-4 mr-2" />
-                Take Photo
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => document.getElementById("gallery-input")?.click()}
-              >
-                <UploadIcon className="h-4 w-4 mr-2" />
-                Choose from Gallery
-              </Button>
+        <Card className="p-6">
+          <div className="space-y-4">
+            {/* Amount Input */}
+            <div className="space-y-2">
+              <Label htmlFor="amount">Amount (₹)</Label>
+              <Input
+                id="amount"
+                type="number"
+                placeholder="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="text-2xl font-bold h-14"
+              />
             </div>
 
-            {selectedImage && (
-              <div className="mt-3 rounded-lg overflow-hidden border border-border animate-scale-in">
-                <img
-                  src={selectedImage}
-                  alt="Receipt preview"
-                  className="w-full h-48 object-cover"
+            {/* Type Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="type">Type</Label>
+              <Select value={type} onValueChange={(val) => setType(val as TransactionType)}>
+                <SelectTrigger id="type" className="h-12">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="income">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-success" />
+                      <span>Income</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="expense">
+                    <div className="flex items-center gap-2">
+                      <TrendingDown className="h-4 w-4 text-destructive" />
+                      <span>Expense</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Category Input */}
+            <div className="space-y-2">
+              <Label htmlFor="category">Category (Optional)</Label>
+              <div className="relative">
+                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="category"
+                  placeholder={type === "income" ? "e.g., Sales, Salary" : "e.g., Rent, Supplies"}
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="pl-10 h-12"
                 />
               </div>
-            )}
+            </div>
+
+            {/* Date Input */}
+            <div className="space-y-2">
+              <Label htmlFor="date">Date</Label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="date"
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="pl-10 h-12"
+                />
+              </div>
+            </div>
           </div>
         </Card>
 
-        {/* Submit Button */}
-        <Button className="w-full" size="lg" onClick={handleSubmit}>
-          <UploadIcon className="h-5 w-5 mr-2" />
-          Submit Transaction
-        </Button>
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1 h-12"
+            onClick={() => setActiveScreen("dashboard")}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="flex-1 h-12"
+            onClick={handleAddTransaction}
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Add Transaction
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -534,7 +708,7 @@ const KhaataKitab = () => {
   // ===== BOTTOM NAVIGATION =====
   const navItems = [
     { id: "dashboard" as Screen, icon: Home, label: "Dashboard" },
-    { id: "upload" as Screen, icon: Upload, label: "Upload" },
+    { id: "add" as Screen, icon: Plus, label: "Add" },
     { id: "alerts" as Screen, icon: AlertCircle, label: "Alerts" },
     { id: "credit" as Screen, icon: TrendingUp, label: "Credit" },
   ];
@@ -543,7 +717,7 @@ const KhaataKitab = () => {
     <div className="min-h-screen bg-background pb-20">
       {/* Screen Content */}
       {activeScreen === "dashboard" && renderDashboard()}
-      {activeScreen === "upload" && renderUpload()}
+      {activeScreen === "add" && renderAddTransaction()}
       {activeScreen === "alerts" && renderAlerts()}
       {activeScreen === "credit" && renderCredit()}
 
