@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Home, Plus, AlertCircle, TrendingUp, TrendingDown, DollarSign,
-  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw,
-  Package, Edit, X, Save
+  Trash2, Calendar, Tag, Lightbulb, CheckCircle, Sparkles, Brain, RotateCcw, Bell, Settings as SettingsIcon
 } from "lucide-react";
+import { sendNotification } from "@/services/notificationService";
+import { useNotifications } from "@/hooks/useNotifications";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { useInventory } from "@/hooks/useInventory";
-import { useTransactions } from "@/hooks/useTransactions";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 // ===== TYPES =====
-type Screen = "dashboard" | "add" | "alerts" | "credit" | "inventory";
+type Screen = "dashboard" | "add" | "alerts" | "credit";
 
 type TransactionType = "income" | "expense";
 
@@ -33,18 +33,19 @@ type Transaction = {
 const KhaataKitab = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>("dashboard");
   const { toast } = useToast();
-  const inventory = useInventory();
-  const transactionsDb = useTransactions();
+  const navigate = useNavigate();
+  const { unreadCount } = useNotifications();
 
-  const transactions = transactionsDb.transactions;
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', quantity: 0, price: 0 });
-  const [showAddInventory, setShowAddInventory] = useState(false);
-  const [newItemName, setNewItemName] = useState('');
-  const [newItemQuantity, setNewItemQuantity] = useState('');
-  const [newItemPrice, setNewItemPrice] = useState('');
-  const [selectedInventoryItem, setSelectedInventoryItem] = useState('');
-  const [transactionQuantity, setTransactionQuantity] = useState('');
+  // ===== TRANSACTION STATE WITH LOCALSTORAGE =====
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem("khaataKitab_transactions");
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Save to localStorage whenever transactions change
+  useEffect(() => {
+    localStorage.setItem("khaataKitab_transactions", JSON.stringify(transactions));
+  }, [transactions]);
 
   // ===== FORM STATE FOR ADD TRANSACTION =====
   const [amount, setAmount] = useState("");
@@ -52,9 +53,16 @@ const KhaataKitab = () => {
   const [category, setCategory] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
 
-  const totalIncome = transactionsDb.getTotalIncome();
-  const totalExpenses = transactionsDb.getTotalExpenses();
-  const currentBalance = transactionsDb.getCurrentBalance();
+  // ===== CALCULATE METRICS FROM TRANSACTIONS =====
+  const totalIncome = transactions
+    .filter((t) => t.type === "income")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalExpenses = transactions
+    .filter((t) => t.type === "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const currentBalance = totalIncome - totalExpenses;
 
   // ===== GENERATE CASHFLOW DATA FROM TRANSACTIONS =====
   const getCashflowData = () => {
@@ -189,7 +197,8 @@ const KhaataKitab = () => {
 
   const alerts = generateAlerts();
 
-  const handleAddTransaction = async () => {
+  // ===== TRANSACTION HANDLERS =====
+  const handleAddTransaction = () => {
     if (!amount || parseFloat(amount) <= 0) {
       toast({
         title: "Invalid amount",
@@ -199,87 +208,47 @@ const KhaataKitab = () => {
       return;
     }
 
-    let inventoryItemId = selectedInventoryItem || undefined;
-    let quantityChanged = 0;
-
-    if (selectedInventoryItem && transactionQuantity) {
-      quantityChanged = type === 'income'
-        ? parseInt(transactionQuantity)
-        : -parseInt(transactionQuantity);
-    }
-
-    const success = await transactionsDb.addTransaction(
-      parseFloat(amount),
+    const newTransaction: Transaction = {
+      id: Date.now().toString(),
+      amount: parseFloat(amount),
       type,
-      category || (type === "income" ? "Other Income" : "Other Expense"),
+      category: category || (type === "income" ? "Other Income" : "Other Expense"),
       date,
-      inventoryItemId,
-      quantityChanged
-    );
+      timestamp: new Date(date).getTime(),
+    };
 
-    if (success) {
-      inventory.refetch();
-      setAmount("");
-      setCategory("");
-      setSelectedInventoryItem("");
-      setTransactionQuantity("");
-      setDate(new Date().toISOString().split("T")[0]);
-      setActiveScreen("dashboard");
-    }
+    setTransactions([newTransaction, ...transactions]);
+
+    toast({
+      title: "Transaction added",
+      description: `₹${amount} ${type} recorded successfully`,
+    });
+
+    sendNotification({
+      type: type === "income" ? "income" : "expense",
+      title: `${type === "income" ? "💰" : "⚠️"} New ${type} recorded`,
+      message: `${type === "income" ? "Credited" : "Debited"} ₹${parseFloat(amount).toLocaleString()} ${category ? `to ${category}` : ""}`,
+      metadata: {
+        transaction_id: newTransaction.id,
+        amount: parseFloat(amount),
+        category: category || (type === "income" ? "Other Income" : "Other Expense"),
+      },
+    });
+
+    // Reset form
+    setAmount("");
+    setCategory("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setActiveScreen("dashboard");
   };
 
   const handleClearData = () => {
-    toast({
-      title: "Data is in database",
-      description: "Transactions are stored in Supabase",
-    });
-  };
-
-  const handleAddInventoryItem = async () => {
-    if (!newItemName || !newItemQuantity || !newItemPrice) {
+    if (confirm("Are you sure you want to clear all data? This cannot be undone.")) {
+      setTransactions([]);
       toast({
-        title: "Missing fields",
-        description: "Please fill all fields",
-        variant: "destructive",
+        title: "Data cleared",
+        description: "All transactions have been removed",
       });
-      return;
-    }
-
-    const success = await inventory.addItem(
-      newItemName,
-      parseInt(newItemQuantity),
-      parseFloat(newItemPrice)
-    );
-
-    if (success) {
-      setNewItemName('');
-      setNewItemQuantity('');
-      setNewItemPrice('');
-      setShowAddInventory(false);
-    }
-  };
-
-  const handleEditItem = (item: any) => {
-    setEditingItemId(item.id);
-    setEditForm({
-      name: item.name,
-      quantity: item.quantity,
-      price: item.price,
-    });
-  };
-
-  const handleSaveEdit = async () => {
-    if (editingItemId) {
-      const success = await inventory.updateItem(editingItemId, editForm);
-      if (success) {
-        setEditingItemId(null);
-      }
-    }
-  };
-
-  const handleDeleteItem = async (id: string) => {
-    if (confirm('Are you sure you want to delete this item?')) {
-      await inventory.deleteItem(id);
     }
   };
 
@@ -613,41 +582,6 @@ const KhaataKitab = () => {
                 />
               </div>
             </div>
-
-            {/* Link to Inventory */}
-            <div className="space-y-2">
-              <Label htmlFor="inventory">Link to Inventory (Optional)</Label>
-              <Select value={selectedInventoryItem} onValueChange={setSelectedInventoryItem}>
-                <SelectTrigger id="inventory" className="h-12">
-                  <SelectValue placeholder="Select inventory item" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {inventory.items.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name} (Stock: {item.quantity})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedInventoryItem && (
-              <div className="space-y-2">
-                <Label htmlFor="quantity">Quantity</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  placeholder="0"
-                  value={transactionQuantity}
-                  onChange={(e) => setTransactionQuantity(e.target.value)}
-                  className="h-12"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {type === 'income' ? 'Add to' : 'Remove from'} inventory
-                </p>
-              </div>
-            )}
           </div>
         </Card>
 
@@ -787,179 +721,21 @@ const KhaataKitab = () => {
     </div>
   );
 
-  const renderInventory = () => (
-    <div className="animate-fade-in pb-4">
-      <div className="bg-primary text-primary-foreground p-6 rounded-b-3xl shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold mb-1">Inventory</h1>
-            <p className="text-sm opacity-90">Manage your stock</p>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowAddInventory(!showAddInventory)}
-            className="bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Item
-          </Button>
-        </div>
-      </div>
-
-      <div className="p-4 space-y-4">
-        <Card className="p-6 bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm opacity-90">Total Stock Value</p>
-            <Package className="h-6 w-6 opacity-90" />
-          </div>
-          <p className="text-4xl font-bold mb-1">₹{inventory.getTotalValue().toLocaleString()}</p>
-          <p className="text-xs opacity-75">
-            {inventory.items.length} item{inventory.items.length !== 1 ? 's' : ''}
-          </p>
-        </Card>
-
-        {showAddInventory && (
-          <Card className="p-4 border-primary/50 bg-primary/5">
-            <h3 className="font-semibold mb-3 text-foreground">Add New Item</h3>
-            <div className="space-y-3">
-              <Input
-                placeholder="Item name"
-                value={newItemName}
-                onChange={(e) => setNewItemName(e.target.value)}
-              />
-              <Input
-                type="number"
-                placeholder="Quantity"
-                value={newItemQuantity}
-                onChange={(e) => setNewItemQuantity(e.target.value)}
-              />
-              <Input
-                type="number"
-                placeholder="Price per unit"
-                value={newItemPrice}
-                onChange={(e) => setNewItemPrice(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowAddInventory(false)}
-                >
-                  Cancel
-                </Button>
-                <Button className="flex-1" onClick={handleAddInventoryItem}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save
-                </Button>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {inventory.loading ? (
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">Loading inventory...</p>
-          </Card>
-        ) : inventory.items.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Package className="h-12 w-12 mx-auto mb-2 opacity-50 text-muted-foreground" />
-            <p className="text-sm text-foreground">No items in inventory</p>
-            <p className="text-xs mt-1 text-muted-foreground">Add your first item to get started</p>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {inventory.items.map((item) => (
-              <Card key={item.id} className="p-4 hover:shadow-md transition-all duration-200">
-                {editingItemId === item.id ? (
-                  <div className="space-y-3">
-                    <Input
-                      value={editForm.name}
-                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input
-                        type="number"
-                        value={editForm.quantity}
-                        onChange={(e) => setEditForm({ ...editForm, quantity: parseInt(e.target.value) })}
-                      />
-                      <Input
-                        type="number"
-                        value={editForm.price}
-                        onChange={(e) => setEditForm({ ...editForm, price: parseFloat(e.target.value) })}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => setEditingItemId(null)}
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Cancel
-                      </Button>
-                      <Button className="flex-1" onClick={handleSaveEdit}>
-                        <Save className="h-4 w-4 mr-2" />
-                        Save
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3 flex-1">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <Package className="h-5 w-5 text-primary" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-foreground">{item.name}</h3>
-                        <div className="flex items-center gap-3 mt-1">
-                          <p className="text-sm text-muted-foreground">Qty: {item.quantity}</p>
-                          <p className="text-sm text-muted-foreground">₹{item.price}/unit</p>
-                        </div>
-                        <p className="text-sm font-semibold text-primary mt-1">
-                          Value: ₹{(item.quantity * item.price).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditItem(item)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteItem(item.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
+  // ===== BOTTOM NAVIGATION =====
   const navItems = [
     { id: "dashboard" as Screen, icon: Home, label: "Dashboard" },
     { id: "add" as Screen, icon: Plus, label: "Add" },
-    { id: "inventory" as Screen, icon: Package, label: "Inventory" },
     { id: "alerts" as Screen, icon: AlertCircle, label: "Alerts" },
     { id: "credit" as Screen, icon: TrendingUp, label: "Credit" },
+    { id: "notifications" as Screen, icon: Bell, label: "Inbox", badge: unreadCount > 0 ? unreadCount : undefined, onClick: () => navigate("/notifications") },
+    { id: "settings" as Screen, icon: SettingsIcon, label: "Settings", onClick: () => navigate("/settings") },
   ];
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      {/* Screen Content */}
       {activeScreen === "dashboard" && renderDashboard()}
       {activeScreen === "add" && renderAddTransaction()}
-      {activeScreen === "inventory" && renderInventory()}
       {activeScreen === "alerts" && renderAlerts()}
       {activeScreen === "credit" && renderCredit()}
 
@@ -969,12 +745,12 @@ const KhaataKitab = () => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeScreen === item.id;
-            
+
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveScreen(item.id)}
-                className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
+                onClick={() => item.onClick ? item.onClick() : setActiveScreen(item.id)}
+                className={`flex flex-col items-center justify-center flex-1 h-full transition-colors relative ${
                   isActive
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -982,6 +758,11 @@ const KhaataKitab = () => {
               >
                 <Icon className="h-5 w-5 mb-1" />
                 <span className="text-xs font-medium">{item.label}</span>
+                {item.badge && (
+                  <span className="absolute top-1.5 right-1/4 bg-destructive text-destructive-foreground text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                    {item.badge > 9 ? "9+" : item.badge}
+                  </span>
+                )}
               </button>
             );
           })}
